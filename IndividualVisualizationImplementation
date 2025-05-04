@@ -1,0 +1,59 @@
+from qiskit import QuantumCircuit, transpile
+from qiskit.quantum_info import Operator
+from qiskit_aer import AerSimulator
+from qiskit.visualization import plot_histogram
+import matplotlib.pyplot as plt
+import numpy as np
+import random
+
+# Configuration
+trojan_indices = [0, 1, 3, 5, 6]  # Marked states (Trojan)
+n_qubits = 3
+N = 2 ** n_qubits
+
+# Randomly choose one Trojan state
+chosen_trojan = random.choice(trojan_indices)
+
+# Oracle matrix: flip sign of the chosen Trojan state
+oracle_matrix = np.identity(N, dtype=complex)
+oracle_matrix[chosen_trojan][chosen_trojan] = -1
+oracle_gate = Operator(oracle_matrix)
+
+# Diffuser (Grover's diffusion operator)
+def diffuser(n):
+    qc = QuantumCircuit(n)
+    qc.h(range(n))
+    qc.x(range(n))
+    qc.h(n-1)
+    qc.mcx(list(range(n-1)), n-1)
+    qc.h(n-1)
+    qc.x(range(n))
+    qc.h(range(n))
+    return qc
+
+# Grover Circuit
+qc = QuantumCircuit(n_qubits, n_qubits)
+qc.h(range(n_qubits))
+grover_iterations = 1
+for _ in range(grover_iterations):
+    qc.unitary(oracle_gate, range(n_qubits), label='Oracle')
+    qc.append(diffuser(n_qubits), range(n_qubits))
+qc.measure(range(n_qubits), range(n_qubits))
+
+# Run simulation
+simulator = AerSimulator()
+compiled = transpile(qc, simulator)
+counts = simulator.run(compiled, shots=1024).result().get_counts()
+
+# Filter the histogram to show only the marked entry
+marked_state_bin = bin(chosen_trojan)[2:].zfill(n_qubits)
+filtered_counts = {marked_state_bin: counts.get(marked_state_bin, 0)}
+
+# Show results
+plot_histogram(filtered_counts)
+plt.show()
+
+# Draw the quantum circuit
+print("\nQuantum Circuit:")
+qc.draw('mpl', scale=0.5)
+

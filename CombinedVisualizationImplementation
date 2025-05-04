@@ -1,0 +1,62 @@
+from qiskit import QuantumCircuit, transpile
+from qiskit.quantum_info import Operator
+from qiskit_aer import AerSimulator
+from qiskit.visualization import plot_histogram
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Configuration
+trojan_indices = [0, 1, 3, 5, 6]  # States that should be marked
+n_qubits = 3
+N = 2 ** n_qubits
+
+# Step 1: Oracle - Flip the sign of Trojan states
+oracle_matrix = np.identity(N, dtype=complex)
+for idx in trojan_indices:
+    oracle_matrix[idx][idx] = -1  # Flip sign of target states
+
+oracle_gate = Operator(oracle_matrix)
+
+# Step 2: Diffuser (Grover's diffusion operator)
+def diffuser(n):
+    qc = QuantumCircuit(n)
+    qc.h(range(n))          # Apply Hadamard to all qubits
+    qc.x(range(n))          # Apply X to all qubits
+    qc.h(n - 1)             # Apply Hadamard to last qubit
+    qc.mcx(list(range(n - 1)), n - 1)  # Multi-controlled X (Toffoli gate)
+    qc.h(n - 1)             # Apply Hadamard to last qubit
+    qc.x(range(n))          # Apply X to all qubits
+    qc.h(range(n))          # Apply Hadamard to all qubits
+    return qc
+# Create and print the diffuser circuit
+diffuser_circuit = diffuser(n_qubits)
+
+# Print as text
+print(diffuser_circuit.draw(output='mpl'))
+
+# Step 3: Grover circuit
+qc = QuantumCircuit(n_qubits, n_qubits)
+
+# Initialize qubits to the superposition state
+qc.h(range(n_qubits))
+
+# Apply multiple Grover iterations (oracle + diffuser)
+grover_iterations = 4  # Increase the number of iterations to get accurate results
+for _ in range(grover_iterations):
+    qc.unitary(oracle_gate, range(n_qubits), label='Oracle')
+    qc.append(diffuser(n_qubits), range(n_qubits))
+
+# Step 4: Measure the qubits
+qc.measure(range(n_qubits), range(n_qubits))
+
+# Run simulation
+simulator = AerSimulator()
+compiled = transpile(qc, simulator)
+result = simulator.run(compiled, shots=1024).result()
+counts = result.get_counts()
+
+# Show results
+print("Measurement Results:", counts)
+plot_histogram(counts)
+plt.show()
+
